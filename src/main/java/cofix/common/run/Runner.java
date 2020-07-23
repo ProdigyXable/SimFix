@@ -6,11 +6,10 @@
  */
 package cofix.common.run;
 
-import java.util.List;
-
 import cofix.common.config.Constant;
 import cofix.common.util.LevelLogger;
 import cofix.common.util.Subject;
+import java.util.List;
 
 /**
  * @author Jiajun
@@ -25,7 +24,7 @@ public class Runner {
 	public static boolean testSingleTest(Subject subject, String clazzAndMethod){
 		List<String> message = null;
 		try {
-			System.out.println("TESTING : " + clazzAndMethod);
+			System.out.println("TESTING single test: " + clazzAndMethod);
 			message = Executor.execute(CmdFactory.createTestSingleTestCaseCmd(subject, 30, clazzAndMethod));
 		} catch (Exception e) {
 			LevelLogger.fatal(__name__ + "#buildSubject run test single test case failed !", e);
@@ -33,7 +32,6 @@ public class Runner {
 		
 		boolean success = false;
 		for(int i = message.size() - 1; i >= 0; i--){
-//			System.out.println(message.get(i));
 			if (message.get(i).contains(SUCCESSTEST)) {
 				success = true;
 				break;
@@ -50,7 +48,7 @@ public class Runner {
 	public static boolean runTestSuite(Subject subject){
 		List<String> message = null;
 		try {
-			System.out.println("TESTING : " + subject.getName() + "_" + subject.getId());
+			System.out.println("TESTING test suite for: " + subject.getName() + "_" + subject.getId());
 			message = Executor.execute(CmdFactory.createTestSubjectCmd(subject, 10*60));
 		} catch (Exception e) {
 			LevelLogger.fatal(__name__ + "#buildSubject run test single test case failed !", e);
@@ -58,7 +56,6 @@ public class Runner {
 		
 		boolean success = false;
 		for(int i = message.size() - 1; i >= 0; i--){
-//			System.out.println(message.get(i));
 			if (message.get(i).contains(SUCCESSTEST)) {
 				success = true;
 				break;

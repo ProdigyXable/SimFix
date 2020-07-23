@@ -12,3 +12,4 @@ sbfl/spectra/*
 sbfl/data/
 statistic/
 target/
+/artifacts/

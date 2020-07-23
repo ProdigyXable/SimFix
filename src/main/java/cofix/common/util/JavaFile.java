@@ -430,10 +430,13 @@ public class JavaFile {
 			return new String();
 		}
 		File file = new File(filePath);
-		if (!file.exists() || !file.isFile()) {
+		if (!file.exists()) {
+                    return filePath;
+                } else if (!file.isFile()) {
 			LevelLogger.error(__name__ + "#readFileToString Illegal input file path : " + filePath);
 			return new String();
 		}
+                
 		return readFileToString(file);
 	}
 

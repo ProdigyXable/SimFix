@@ -11,13 +11,11 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import javax.print.attribute.standard.MediaSize.Other;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.WildcardType;
 
-import com.sun.xml.internal.bind.v2.runtime.Name;
 
 import cofix.common.util.Pair;
 import cofix.core.metric.Literal;
