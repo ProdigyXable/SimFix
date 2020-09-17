@@ -34,6 +34,10 @@ public class Constant {
 	public static String PROJ_JSON_FILE = HOME + "/d4j-info/project.json";
 	public static String PROJ_LOG_BASE_PATH = HOME + "/log";
 	public static String PROJ_REALTIME_LOC_BASE = HOME + "/d4j-info/realtime/location";
+        
+        public static String PROFL_TEST = "";
+        public static String PROFL_METHOD = "";
+        public static String PROFL_FAIL = "";
 	
 	
 	// command configuration

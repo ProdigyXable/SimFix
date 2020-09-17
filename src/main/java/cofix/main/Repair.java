@@ -26,7 +26,9 @@ import cofix.core.parser.node.CodeBlock;
 import cofix.core.parser.node.Node;
 import cofix.core.parser.search.BuggyCode;
 import cofix.core.parser.search.SimpleFilter;
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.text.SimpleDateFormat;
@@ -38,6 +40,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 import org.apache.commons.io.FileUtils;
@@ -47,11 +50,12 @@ import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.Type;
 import org.junit.runner.Result;
-import utdallas.edu.profl.replicate.util.MethodLineCoverageInterface;
+import utdallas.edu.profl.replicate.patchcategory.DefaultPatchCategories;
 import utdallas.edu.profl.replicate.util.ProflResultRanking;
-import utdallas.edu.profl.replicate.util.TestLineCoverageInterface;
 import utdallas.edu.profl.replicate.util.XiaMethodLineCoverage;
 import utdallas.edu.profl.replicate.util.XiaTestLineCoverage;
+import utdallas.edu.profl.replicate.util.interfaces.MethodLineCoverageInterface;
+import utdallas.edu.profl.replicate.util.interfaces.TestLineCoverageInterface;
 
 /**
  * @author Jiajun
@@ -59,6 +63,7 @@ import utdallas.edu.profl.replicate.util.XiaTestLineCoverage;
  */
 public class Repair {
 
+    private int patchAttempts = 0;
     private AbstractFaultlocalization _localization = null;
     private Subject _subject = null;
     private List<String> _failedTestCases = null;
@@ -76,9 +81,9 @@ public class Repair {
         _passedTestCases = fLocalization.getPassedTestCases();
         _passedTestCasesMap = new HashMap<>();
 
-        String testCoveragePath = "";
-        String methodCoveragePath = "";
-        String failingTestPath = "";
+        String testCoveragePath = Constant.PROFL_TEST;
+        String methodCoveragePath = Constant.PROFL_METHOD;
+        String failingTestPath = Constant.PROFL_FAIL;
 
         testCoverage = new XiaTestLineCoverage(testCoveragePath);
         methodCoverage = new XiaMethodLineCoverage(methodCoveragePath);
@@ -140,7 +145,7 @@ public class Repair {
             FileUtils.deleteDirectory(new File(_subject.getHome() + _subject.getSbin()));
             FileUtils.deleteDirectory(new File(_subject.getHome() + _subject.getTbin()));
             System.out.println(loc.getFirst() + "," + loc.getSecond());
-
+            
             String file = _subject.getHome() + _subject.getSsrc() + "/" + loc.getFirst().replace(".", "/") + ".java";
             String binFile = _subject.getHome() + _subject.getSbin() + "/" + loc.getFirst().replace(".", "/") + ".class";
             // get buggy code block
@@ -252,7 +257,7 @@ public class Repair {
                                 continue;
                             }
 
-                            if (replace != null && !replace.isEmpty()) {
+                            if (!replace.isEmpty()) {
                                 System.out.println("======== PATCH BEGIN ========");
                                 System.out.println(replace.trim());
                                 System.out.println("-------- PATCH END --------");
@@ -271,13 +276,13 @@ public class Repair {
                             }
 
                             // validate correctness of patch
-                            switch (validate(logFile, oneBuggyBlock, testLogFile, range, file)) {
+                            switch (validate(logFile, oneBuggyBlock, range, file, loc.getFirst())) {
                                 case COMPILE_FAILED:
                                     System.out.println("Compilation failed, skipping tests");
 //								haveTryPatches.remove(replace);
                                     break;
                                 case SUCCESS:
-                                    writeOriginalTestCaseStatus(testLogFile);
+                                    // writeOriginalTestCaseStatus(testLogFile);
 
                                     String correctPatch = oneBuggyBlock.toSrcString().toString().replace("\\s*|\t|\r|\n", "");
                                     if (patches.contains(correctPatch)) {
@@ -308,7 +313,7 @@ public class Repair {
                                     break; //remove passed revision
                                 case TEST_FAILED:
 
-                                    writeOriginalTestCaseStatus(testLogFile);
+                                    // writeOriginalTestCaseStatus(testLogFile);
                                     System.out.println("Test suite failed: " + testLogFile);
                                     if (legalModifications != null) {
                                         for (Integer index : modifySet) {
@@ -347,6 +352,26 @@ public class Repair {
         stringBuffer.append("----------------------------------------\n");
 //		System.out.println(stringBuffer.toString());
         JavaFile.writeStringToFile(logFile, stringBuffer.toString(), true);
+    }
+
+    private void savePatch(String patch, String methodName, Pair<Integer, Integer> sourceRange) {
+        File outputFile = new File(String.format("../simfix-output/%s-%d/patches/%d.patch", this._subject.getName(), this._subject.getId(), ++this.patchAttempts));
+        outputFile.getParentFile().mkdirs();
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputFile))) {
+            bw.write("Method signature: " + methodName);
+            bw.newLine();
+
+            bw.write(String.format("Patched lines: %d - %d", sourceRange.getFirst(), sourceRange.getSecond()));
+            bw.newLine();
+
+            bw.write("------------");
+            bw.newLine();
+
+            bw.write(patch);
+            bw.newLine();
+        } catch (IOException ex) {
+            System.err.println(ex.getMessage());
+        }
     }
 
     private List<Modification> removeDuplicateModifications(List<Modification> modifications) {
@@ -484,23 +509,35 @@ public class Repair {
         return rslt;
     }
 
-    private ValidateStatus validate(String logFile, CodeBlock buggyBlock, String testLogName, Pair<Integer, Integer> sourceRange, String file) {
-        System.out.println("start:" +buggyBlock.getStartLine());
-        System.out.println("end:" +buggyBlock.getEndLine());
-        System.out.println("max:" +buggyBlock.getMaxLines());        
-        System.out.println("modified srcStart=" + sourceRange.getFirst());
-        System.out.println("modified srcEnd=" + sourceRange.getSecond());
-        System.out.println("modified file=" + file);
-        
+    private ValidateStatus validate(String logFile, CodeBlock buggyBlock, Pair<Integer, Integer> sourceRange, String file, String file2) {
+//        System.out.println("start:" + buggyBlock.getStartLine());
+//        System.out.println("end:" + buggyBlock.getEndLine());
+//        System.out.println("max:" + buggyBlock.getMaxLines());
+//        System.out.println("modified srcStart=" + sourceRange.getFirst());
+//        System.out.println("modified srcEnd=" + sourceRange.getSecond());
+//        System.out.println("modified file=" + file);
+
+        String methodName = "";
+        Map<String, Double> newMap = new TreeMap();
+
+        try {
+            methodName = profl.getMethodCoverage().getMethodFromPackageNumber(file2, sourceRange.getFirst());
+            System.out.println(String.format("Modified method %s from %d to %d", methodName, sourceRange.getFirst(), sourceRange.getFirst()));
+            newMap.put(methodName, profl.getGeneralMethodSusValues().get(methodName));
+        } catch (Exception e) {
+            System.out.println("Could not find method signature for " + file2 + " at line " + sourceRange.getFirst());
+            System.out.println(e.getMessage());
+        }
+
         if (!Runner.compileSubject(_subject)) {
             System.out.println("Build failed !");
             return ValidateStatus.COMPILE_FAILED;
         }
 
-        // Set<String> passPass = new TreeSet(this._localization.getPassedTestCases());
-        // Set<String> passFail = new TreeSet(this._localization.getPassedTestCases());
         Set<String> failPass = new TreeSet();
         Set<String> failFail = new TreeSet();
+        Set<String> passFail = new TreeSet();
+        Set<String> passPass = new TreeSet();
 
         System.out.println("-------- PROCESSING TESTS BEGIN --------");
 
@@ -512,56 +549,138 @@ public class Repair {
             String[] testinfo = testcase.split("::");
             if (!Runner.testSingleTest(_subject, testinfo[0], testinfo[1])) {
                 failFail.add(testcase);
-                writeNewFailFailTestCaseStatus(testcase, testLogName); // return after for loop if complete list of fail test cases is needed
+                // writeNewFailFailTestCaseStatus(testcase, testLogName); // return after for loop if complete list of fail test cases is needed
 
                 stop = ValidateStatus.TEST_FAILED;
             } else {
                 failPass.add(testcase);
-                writeNewFailPassTestCaseStatus(testcase, testLogName);
+                // writeNewFailPassTestCaseStatus(testcase, testLogName);
             }
         }
 
         dumpPatch(logFile, "Pass Single Test", "", new Pair<Integer, Integer>(0, 0), buggyBlock.toSrcString().toString());
 
-        boolean successfulTestSuite = Runner.runTestSuite(_subject);
+        List<String> validationTestResults = Runner.runTestSuite(_subject);
+
+        for (String failed : validationTestResults) {
+            if (_failedTestCases.contains(failed)) {
+                failFail.add(failed);
+            } else {
+                passFail.add(failed);
+            }
+        }
+
+        for (String testcase : _failedTestCases) {
+            if (!validationTestResults.contains(testcase)) {
+                failPass.add(testcase);
+            }
+        }
+
+        boolean successfulTestSuite = validationTestResults.isEmpty();
         boolean failPassTestsExist = !failPass.isEmpty();
         boolean passFailTestsExist = (failFail.isEmpty() && !successfulTestSuite);
 
-        if (successfulTestSuite) {
-            System.out.println("CleanFix detected!");
-        } else if (failPassTestsExist || passFailTestsExist) {
-            System.out.println("NoisyFix detected!");
-        } else if (failPassTestsExist && passFailTestsExist) {
-            System.out.println("NoneFix detected");
-        } else {
-            System.out.println("NegFix detected!");
+        if (!newMap.isEmpty()) {
+
+            savePatch(buggyBlock.toSrcString().toString(), methodName, sourceRange);
+            System.out.println(String.format("--- Information for Patch %d --- [START]", this.patchAttempts));
+            if (!failPass.isEmpty() && passFail.isEmpty()) {
+                if (failFail.isEmpty()) {
+                    System.out.println("Full CleanFix detected");
+                    profl.addCategoryEntry(DefaultPatchCategories.CLEAN_FIX_FULL, newMap);
+                } else {
+                    System.out.println("Partial CleanFix detected");
+                    profl.addCategoryEntry(DefaultPatchCategories.CLEAN_FIX_PARTIAL, newMap);
+                }
+            } else if (!failPass.isEmpty() && !passFail.isEmpty()) {
+                if (failFail.isEmpty()) {
+                    System.out.println("Full NoisyFix detected");
+                    profl.addCategoryEntry(DefaultPatchCategories.NOISY_FIX_FULL, newMap);
+                } else {
+                    System.out.println("Partial NoisyFix detected");
+                    profl.addCategoryEntry(DefaultPatchCategories.NOISY_FIX_PARTIAL, newMap);
+                }
+
+            } else if (failPass.isEmpty() && passFail.isEmpty()) {
+                System.out.println("NoneFix detected");
+                profl.addCategoryEntry(DefaultPatchCategories.NONE_FIX, newMap);
+            } else {
+                System.out.println("NegFix detected!");
+                profl.addCategoryEntry(DefaultPatchCategories.NEG_FIX, newMap);
+            }
+
+            saveProflData();
+            System.out.println(String.format("--- Information for Patch %d --- [END]", this.patchAttempts));
         }
 
         System.out.println("-------- PROCESSING TESTS END --------");
 
-        if (!successfulTestSuite) {
+        if (failFail.isEmpty() && passFail.isEmpty()) {
             return ValidateStatus.TEST_FAILED;
         }
 
         return stop;
     }
 
+    private void saveProflData() {
+        File genOutputFile = new File(String.format("../simfix-output/%s-%d/generalSusInfo.profl", this._subject.getName(), this._subject.getId()));
+        File susOutputFile = new File(String.format("../simfix-output/%s-%d/aggregatedSusInfo.profl", this._subject.getName(), this._subject.getId()));
+        File catOutputFile = new File(String.format("../simfix-output/%s-%d/category_information.profl", this._subject.getName(), this._subject.getId()));
+
+        genOutputFile.getParentFile().mkdirs();
+        susOutputFile.getParentFile().mkdirs();
+        catOutputFile.getParentFile().mkdirs();
+
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(genOutputFile))) {
+            System.out.println("Saving information to " + genOutputFile.getAbsolutePath());
+            for (String s : profl.outputSbflSus()) {
+                bw.write(s);
+                bw.newLine();
+            }
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(susOutputFile))) {
+            System.out.println("Saving information to " + susOutputFile.getAbsolutePath());
+            for (String s : profl.outputProflResults()) {
+                bw.write(s);
+                bw.newLine();
+            }
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(catOutputFile))) {
+            System.out.println("Saving information to " + catOutputFile.getAbsolutePath());
+            for (String s : profl.outputProflCatInfo()) {
+                bw.write(s);
+                bw.newLine();
+            }
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+    }
+
     private void writeNewFailFailTestCaseStatus(String testcase, String testLogName) {
+        System.out.println(String.format("[FAIL->FAIL test case] %s", testcase));
         JavaFile.writeStringToFile(testLogName, String.format("[FAIL->FAIL test case] %s%n", testcase), true);
     }
 
     private void writeNewFailPassTestCaseStatus(String testcase, String testLogName) {
+        System.out.println(String.format("[FAIL->PASS test case] %s", testcase));
         JavaFile.writeStringToFile(testLogName, String.format("[FAIL->PASS test case] %s%n", testcase), true);
     }
 
     // Do not have explicit access to passing test suite
     private void writeNewPassFailTestCaseStatus(String testcase, String testLogName) {
+        System.out.println(String.format("[PASS->FAIL test case] %s", testcase));
         JavaFile.writeStringToFile(testLogName, String.format("[PASS->FAIL test case] %s%n", testcase), true);
     }
 
     private void writeNewPassPassTestCaseStatus(String testcase, String testLogName) {
+        System.out.println(String.format("[PASS->PASS test case] %s", testcase));
         JavaFile.writeStringToFile(testLogName, String.format("[PASS->PASS test case] %s%n", testcase), true);
-
     }
 
     private void writeOriginalTestCaseStatus(String testLogName) {

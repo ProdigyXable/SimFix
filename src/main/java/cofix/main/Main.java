@@ -155,7 +155,17 @@ public class Main {
         for (int i = 0; i < args.length; i++) {
             if (args[i].startsWith("--proj_home=")) {
                 Constant.PROJECT_HOME = args[i].substring("--proj_home=".length());
-            } else if (args[i].startsWith("--proj_name=")) {
+            } else if (args[i].startsWith("--profl_test=")) {
+                Constant.PROFL_TEST = args[i].substring("--profl_test=".length());
+                System.out.println(String.format("profl_test = %s", Constant.PROFL_TEST));
+            } else if (args[i].startsWith("--profl_method=")) {
+                Constant.PROFL_METHOD = args[i].substring("--profl_method=".length());
+                System.out.println(String.format("profl_method = %s", Constant.PROFL_METHOD));
+            } else if (args[i].startsWith("--profl_fail=")) {
+                Constant.PROFL_FAIL = args[i].substring("--profl_fail=".length());
+                System.out.println(String.format("profl_fail = %s", Constant.PROFL_FAIL));
+            }
+            else if (args[i].startsWith("--proj_name=")) {
                 projName = args[i].substring("--proj_name=".length());
             } else if (args[i].startsWith("--bug_id=")) {
                 String idseq = args[i].substring("--bug_id=".length());

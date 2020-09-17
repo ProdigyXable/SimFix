@@ -9,6 +9,7 @@ package cofix.common.run;
 import cofix.common.config.Constant;
 import cofix.common.util.LevelLogger;
 import cofix.common.util.Subject;
+import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -16,71 +17,77 @@ import java.util.List;
  * @date Jul 11, 2017
  */
 public class Runner {
-	
-	private final static String __name__ = "@Runner ";
-	private final static String SUCCESSTEST = "Failing tests: 0";
-	
-	
-	public static boolean testSingleTest(Subject subject, String clazzAndMethod){
-		List<String> message = null;
-		try {
-			System.out.println("TESTING single test: " + clazzAndMethod);
-			message = Executor.execute(CmdFactory.createTestSingleTestCaseCmd(subject, 30, clazzAndMethod));
-		} catch (Exception e) {
-			LevelLogger.fatal(__name__ + "#buildSubject run test single test case failed !", e);
-		}
-		
-		boolean success = false;
-		for(int i = message.size() - 1; i >= 0; i--){
-			if (message.get(i).contains(SUCCESSTEST)) {
-				success = true;
-				break;
-			}
-		}
-		
-		return success;
-	}
-	
-	public static boolean testSingleTest(Subject subject, String clazz, String method){
-		return testSingleTest(subject, clazz + "::" + method);
-	}
-	
-	public static boolean runTestSuite(Subject subject){
-		List<String> message = null;
-		try {
-			System.out.println("TESTING test suite for: " + subject.getName() + "_" + subject.getId());
-			message = Executor.execute(CmdFactory.createTestSubjectCmd(subject, 10*60));
-		} catch (Exception e) {
-			LevelLogger.fatal(__name__ + "#buildSubject run test single test case failed !", e);
-		}
-		
-		boolean success = false;
-		for(int i = message.size() - 1; i >= 0; i--){
-			if (message.get(i).contains(SUCCESSTEST)) {
-				success = true;
-				break;
-			}
-		}
-		
-		return success;
-	}
-	
-	public static boolean compileSubject(Subject subject) {
-		List<String> message = null;
-		try {
-			message = Executor.execute(CmdFactory.createBuildSubjectCmd(subject));
-		} catch (Exception e) {
-			LevelLogger.fatal(__name__ + "#buildSubject run build subject failed !", e);
-		}
-		
-		boolean success = true;
-		for(int i = message.size() - 1; i >= 0; i--){
-			if (message.get(i).contains(Constant.ANT_BUILD_FAILED)) {
-				success = false;
-				break;
-			}
-		}
-		
-		return success;
-	}
+
+    private final static String __name__ = "@Runner ";
+    private final static String SUCCESSTEST = "Failing tests: 0";
+
+    public static boolean testSingleTest(Subject subject, String clazzAndMethod) {
+        List<String> message = null;
+        try {
+            // System.out.println("TESTING single test: " + clazzAndMethod);
+            message = Executor.execute(CmdFactory.createTestSingleTestCaseCmd(subject, 30, clazzAndMethod));
+        } catch (Exception e) {
+            LevelLogger.fatal(__name__ + "#buildSubject run test single test case failed !", e);
+        }
+
+        boolean success = false;
+        for (int i = message.size() - 1; i >= 0; i--) {
+            if (message.get(i).contains(SUCCESSTEST)) {
+                success = true;
+                break;
+            }
+        }
+
+        return success;
+    }
+
+    public static boolean testSingleTest(Subject subject, String clazz, String method) {
+        return testSingleTest(subject, clazz + "::" + method);
+    }
+
+    public static List<String> runTestSuite(Subject subject) {
+        List<String> message = null;
+        List<String> output = new LinkedList();
+        try {
+            System.out.println("TESTING test suite for: " + subject.getName() + "_" + subject.getId());
+            message = Executor.execute(CmdFactory.createTestSubjectCmd(subject, 10 * 60));
+        } catch (Exception e) {
+            LevelLogger.fatal(__name__ + "#buildSubject run test single test case failed !", e);
+        }
+
+        boolean success = false;
+        for (int i = message.size() - 1; i >= 0; i--) {
+            if (message.get(i).contains(SUCCESSTEST)) {
+                success = true;
+                break;
+            } else if (message.get(i).contains(" - ")) {
+                System.out.println("Failing test: " + message.get(i).split("-")[1].trim());
+                output.add(message.get(i).split("-")[1].trim());
+            } else {
+                System.out.println(message.get(i));
+            }
+
+        }
+
+        return output;
+    }
+
+    public static boolean compileSubject(Subject subject) {
+        List<String> message = null;
+        try {
+            message = Executor.execute(CmdFactory.createBuildSubjectCmd(subject));
+        } catch (Exception e) {
+            LevelLogger.fatal(__name__ + "#buildSubject run build subject failed !", e);
+        }
+
+        boolean success = true;
+        for (int i = message.size() - 1; i >= 0; i--) {
+            if (message.get(i).contains(Constant.ANT_BUILD_FAILED)) {
+                success = false;
+                break;
+            }
+        }
+
+        return success;
+    }
 }
