@@ -128,10 +128,11 @@ public class Repair {
 
     public Status fix(Timer timer, String logFile, int currentTry) throws IOException {
         String src = _subject.getHome() + _subject.getSsrc();
-        List<Pair<String, Integer>> locations = _localization.getLocations(200);
+        List<Pair<String, Integer>> locations = _localization.getLocations(2000);
 
         int correct = 0;
         int totalAttempts = 0;
+        int locationAttempts = 0;
 
         Set<String> haveTryBuggySourceCode = new HashSet<>();
         Status status = Status.FAILED;
@@ -141,196 +142,215 @@ public class Repair {
             if (timer.timeout()) {
                 return Status.TIMEOUT;
             }
-            _subject.restore();
-            FileUtils.deleteDirectory(new File(_subject.getHome() + _subject.getSbin()));
-            FileUtils.deleteDirectory(new File(_subject.getHome() + _subject.getTbin()));
-            System.out.println(loc.getFirst() + "," + loc.getSecond());
-            
-            String file = _subject.getHome() + _subject.getSsrc() + "/" + loc.getFirst().replace(".", "/") + ".java";
-            String binFile = _subject.getHome() + _subject.getSbin() + "/" + loc.getFirst().replace(".", "/") + ".class";
-            // get buggy code block
-            CodeBlock buggyblock = BuggyCode.getBuggyCodeBlock(file, loc.getSecond());
-            Integer methodID = buggyblock.getWrapMethodID();
-            if (methodID == null) {
-                logMessage(logFile, "file=" + loc.getFirst() + ", location=" + loc.getSecond() + "=>Find no block");
-                System.out.println("Find no block!");
-                continue;
-            }
-            logMessage(logFile, "file=" + loc.getFirst() + ", location=" + loc.getSecond());
-            List<CodeBlock> buggyBlockList = new LinkedList<>();
-            buggyBlockList.addAll(buggyblock.reduce());
-            buggyBlockList.add(buggyblock);
 
-            for (CodeBlock oneBuggyBlock : buggyBlockList) {
-                String currentBlockString = oneBuggyBlock.toSrcString().toString();
-                if (currentBlockString == null || currentBlockString.length() <= 0) {
-                    continue;
-                }
-                if (haveTryBuggySourceCode.contains(currentBlockString)) {
-                    continue;
-                }
-                haveTryBuggySourceCode.add(currentBlockString);
-                _subject.restore();
-                Pair<Integer, Integer> range = oneBuggyBlock.getLineRangeInSource();
-                Set<String> haveTryPatches = new HashSet<>();
-                // get all variables can be used at buggy line
-                Map<String, Type> usableVars = NodeUtils.getUsableVarTypes(file, loc.getSecond());
-                // search candidate similar code block
-                SimpleFilter simpleFilter = new SimpleFilter(oneBuggyBlock);
+            if (locationAttempts <= 200) {
 
-                List<Pair<CodeBlock, Double>> candidates = simpleFilter.filter(src, 0.3);
-                List<String> source = null;
-                try {
-                    source = JavaFile.readFileToList(file);
-                } catch (IOException e1) {
-                    System.err.println("Failed to read file to list : " + file);
-                    continue;
-                }
-                int i = 1;
-                for (Pair<CodeBlock, Double> similar : candidates) {
-                    // try top 100 candidates
-                    if (i > 100 || timer.timeout()) {
-                        break;
-                    }
+                for (String buggyMethod : Constant.buggyMethods) {
+                    String fileClass = loc.getFirst();
 
-                    // i++;
-                    // compute transformation
-                    List<Modification> modifications = CodeBlockMatcher.match(oneBuggyBlock, similar.getFirst(), usableVars);
-                    Map<String, Set<Node>> already = new HashMap<>();
-                    // try each transformation first
-                    List<Set<Integer>> list = new ArrayList<>();
-                    list.addAll(consistentModification(modifications));
-                    modifications = removeDuplicateModifications(modifications);
-                    for (int index = 0; index < modifications.size(); index++) {
-                        Modification modification = modifications.get(index);
-                        String modify = modification.toString();
-                        Set<Node> tested = already.get(modify);
-                        if (tested != null) {
-                            if (tested.contains(modification.getSrcNode())) {
-                                continue;
-                            } else {
-                                tested.add(modification.getSrcNode());
-                            }
-                        } else {
-                            tested = new HashSet<>();
-                            tested.add(modification.getSrcNode());
-                            already.put(modify, tested);
+                    if (buggyMethod.contains(fileClass)) {
+                        locationAttempts++;
+                        System.out.println(String.format("Processing incorrect file: %s", fileClass));
+                        _subject.restore();
+                        FileUtils.deleteDirectory(new File(_subject.getHome() + _subject.getSbin()));
+                        FileUtils.deleteDirectory(new File(_subject.getHome() + _subject.getTbin()));
+                        // System.out.println(loc.getFirst() + "," + loc.getSecond());
+
+                        String file = _subject.getHome() + _subject.getSsrc() + "/" + loc.getFirst().replace(".", "/") + ".java";
+                        String binFile = _subject.getHome() + _subject.getSbin() + "/" + loc.getFirst().replace(".", "/") + ".class";
+                        // get buggy code block
+                        CodeBlock buggyblock = BuggyCode.getBuggyCodeBlock(file, loc.getSecond());
+                        Integer methodID = buggyblock.getWrapMethodID();
+                        if (methodID == null) {
+                            // logMessage(logFile, "file=" + loc.getFirst() + ", location=" + loc.getSecond() + "=>Find no block");
+                            // System.out.println("Find no block!");
+                            continue;
                         }
-                        Set<Integer> set = new HashSet<>();
-                        set.add(index);
-                        list.add(set);
-                    }
+                        // logMessage(logFile, "file=" + loc.getFirst() + ", location=" + loc.getSecond());
+                        if (Constant.buggyMethods.isEmpty()) {
+                            System.out.println("No buggy methods supplied!");
+                            continue;
+                        }
 
-                    List<Modification> legalModifications = new ArrayList<>();
-                    while (true) {
-                        totalAttempts++;
-                        int modifySetIteration = 0;
+                        List<CodeBlock> buggyBlockList = new LinkedList<>();
+                        buggyBlockList.addAll(buggyblock.reduce());
+                        buggyBlockList.add(buggyblock);
 
-                        for (Set<Integer> modifySet : list) {
-                            modifySetIteration++;
-                            String testLogFile = Constant.PROJ_LOG_BASE_PATH + "/" + _subject.getName() + "/Attempt_" + totalAttempts + "_mod" + modifySetIteration + "_" + _subject.getId() + ".tests";
-                            if (timer.timeout()) {
-                                return Status.TIMEOUT;
-                            }
-
-                            for (Integer index : modifySet) {
-                                modifications.get(index).apply(usableVars);
-                            }
-
-                            String replace = oneBuggyBlock.toSrcString().toString();
-                            if (replace.equals(currentBlockString)) {
-                                for (Integer index : modifySet) {
-                                    modifications.get(index).restore();
-                                }
+                        for (CodeBlock oneBuggyBlock : buggyBlockList) {
+                            String currentBlockString = oneBuggyBlock.toSrcString().toString();
+                            if (currentBlockString == null || currentBlockString.length() <= 0) {
                                 continue;
                             }
-                            if (haveTryPatches.contains(replace)) {
-//								System.out.println("already try ...");
-                                for (Integer index : modifySet) {
-                                    modifications.get(index).restore();
-                                }
-                                if (legalModifications != null) {
-                                    for (Integer index : modifySet) {
-                                        legalModifications.add(modifications.get(index));
-                                    }
-                                }
+                            if (haveTryBuggySourceCode.contains(currentBlockString)) {
                                 continue;
                             }
+                            haveTryBuggySourceCode.add(currentBlockString);
+                            _subject.restore();
+                            Pair<Integer, Integer> range = oneBuggyBlock.getLineRangeInSource();
+                            Set<String> haveTryPatches = new HashSet<>();
+                            // get all variables can be used at buggy line
+                            Map<String, Type> usableVars = NodeUtils.getUsableVarTypes(file, loc.getSecond());
+                            // search candidate similar code block
+                            SimpleFilter simpleFilter = new SimpleFilter(oneBuggyBlock);
 
-                            if (!replace.isEmpty()) {
-                                System.out.println("======== PATCH BEGIN ========");
-                                System.out.println(replace.trim());
-                                System.out.println("-------- PATCH END --------");
-                            }
-
-                            haveTryPatches.add(replace);
+                            List<Pair<CodeBlock, Double>> candidates = simpleFilter.filter(src, 0.3);
+                            List<String> source = null;
                             try {
-                                JavaFile.sourceReplace(file, source, range.getFirst(), range.getSecond(), replace);
-                            } catch (IOException e) {
-                                System.err.println("Failed to replace source code.");
+                                source = JavaFile.readFileToList(file);
+                            } catch (IOException e1) {
+                                System.err.println("Failed to read file to list : " + file);
                                 continue;
                             }
-                            try {
-                                FileUtils.forceDelete(new File(binFile));
-                            } catch (IOException e) {
-                            }
-
-                            // validate correctness of patch
-                            switch (validate(logFile, oneBuggyBlock, range, file, loc.getFirst())) {
-                                case COMPILE_FAILED:
-                                    System.out.println("Compilation failed, skipping tests");
-//								haveTryPatches.remove(replace);
+                            int i = 1;
+                            for (Pair<CodeBlock, Double> similar : candidates) {
+                                // try top 100 candidates
+                                if (i > 100 || timer.timeout()) {
                                     break;
-                                case SUCCESS:
-                                    // writeOriginalTestCaseStatus(testLogFile);
+                                }
 
-                                    String correctPatch = oneBuggyBlock.toSrcString().toString().replace("\\s*|\t|\r|\n", "");
-                                    if (patches.contains(correctPatch)) {
-                                        continue;
+                                // i++;
+                                // compute transformation
+                                List<Modification> modifications = CodeBlockMatcher.match(oneBuggyBlock, similar.getFirst(), usableVars);
+                                Map<String, Set<Node>> already = new HashMap<>();
+                                // try each transformation first
+                                List<Set<Integer>> list = new ArrayList<>();
+                                list.addAll(consistentModification(modifications));
+                                modifications = removeDuplicateModifications(modifications);
+                                for (int index = 0; index < modifications.size(); index++) {
+                                    Modification modification = modifications.get(index);
+                                    String modify = modification.toString();
+                                    Set<Node> tested = already.get(modify);
+                                    if (tested != null) {
+                                        if (tested.contains(modification.getSrcNode())) {
+                                            continue;
+                                        } else {
+                                            tested.add(modification.getSrcNode());
+                                        }
+                                    } else {
+                                        tested = new HashSet<>();
+                                        tested.add(modification.getSrcNode());
+                                        already.put(modify, tested);
                                     }
-                                    patches.add(correctPatch);
-                                    correct++;
-                                    // for debug
-                                    dumpPatch(logFile, "Similar code block : " + similar.getSecond(), file, new Pair<Integer, Integer>(0, 0), similar.getFirst().toSrcString().toString());
-                                    dumpPatch(logFile, "Original source code", file, range, currentBlockString);
-                                    dumpPatch(logFile, "Find a patch", file, range, oneBuggyBlock.toSrcString().toString());
-                                    String target = Constant.HOME + "/patch/" + _subject.getName() + "/" + _subject.getId() + "/" + currentTry;
+                                    Set<Integer> set = new HashSet<>();
+                                    set.add(index);
+                                    list.add(set);
+                                }
 
-                                    File tarFile = new File(target);
-                                    if (!tarFile.exists()) {
-                                        tarFile.mkdirs();
-                                    }
+                                List<Modification> legalModifications = new ArrayList<>();
+                                while (true) {
+                                    totalAttempts++;
+                                    int modifySetIteration = 0;
 
-                                    System.out.println("Successful patch found: " + testLogFile);
+                                    for (Set<Integer> modifySet : list) {
+                                        modifySetIteration++;
+                                        String testLogFile = Constant.PROJ_LOG_BASE_PATH + "/" + _subject.getName() + "/Attempt_" + totalAttempts + "_mod" + modifySetIteration + "_" + _subject.getId() + ".tests";
+                                        if (timer.timeout()) {
+                                            return Status.TIMEOUT;
+                                        }
 
-                                    File sourceFile = new File(file);
-                                    FileUtils.copyFile(sourceFile, new File(target + "/" + totalAttempts + "_" + sourceFile.getName()));
-                                    status = Status.SUCCESS;
-                                    if (correct == Constant.PATCH_NUM) {
-                                        return Status.SUCCESS;
-                                    }
-
-                                    break; //remove passed revision
-                                case TEST_FAILED:
-
-                                    // writeOriginalTestCaseStatus(testLogFile);
-                                    System.out.println("Test suite failed: " + testLogFile);
-                                    if (legalModifications != null) {
                                         for (Integer index : modifySet) {
-                                            legalModifications.add(modifications.get(index));
+                                            modifications.get(index).apply(usableVars);
+                                        }
+
+                                        String replace = oneBuggyBlock.toSrcString().toString();
+                                        if (replace.equals(currentBlockString)) {
+                                            for (Integer index : modifySet) {
+                                                modifications.get(index).restore();
+                                            }
+                                            continue;
+                                        }
+                                        if (haveTryPatches.contains(replace)) {
+//								System.out.println("already try ...");
+                                            for (Integer index : modifySet) {
+                                                modifications.get(index).restore();
+                                            }
+                                            if (legalModifications != null) {
+                                                for (Integer index : modifySet) {
+                                                    legalModifications.add(modifications.get(index));
+                                                }
+                                            }
+                                            continue;
+                                        }
+
+                                        if (!replace.isEmpty()) {
+                                            System.out.println("======== PATCH BEGIN ========");
+                                            System.out.println(replace.trim());
+                                            System.out.println("-------- PATCH END --------");
+                                        }
+
+                                        haveTryPatches.add(replace);
+                                        try {
+                                            JavaFile.sourceReplace(file, source, range.getFirst(), range.getSecond(), replace);
+                                        } catch (IOException e) {
+                                            System.err.println("Failed to replace source code.");
+                                            continue;
+                                        }
+                                        try {
+                                            FileUtils.forceDelete(new File(binFile));
+                                        } catch (IOException e) {
+                                        }
+
+                                        // validate correctness of patch
+                                        switch (validate(logFile, oneBuggyBlock, range, file, loc.getFirst())) {
+                                            case COMPILE_FAILED:
+                                                System.out.println("Compilation failed, skipping tests");
+//								haveTryPatches.remove(replace);
+                                                break;
+                                            case SUCCESS:
+                                                // writeOriginalTestCaseStatus(testLogFile);
+
+                                                String correctPatch = oneBuggyBlock.toSrcString().toString().replace("\\s*|\t|\r|\n", "");
+                                                if (patches.contains(correctPatch)) {
+                                                    continue;
+                                                }
+                                                patches.add(correctPatch);
+                                                correct++;
+                                                // for debug
+                                                dumpPatch(logFile, "Similar code block : " + similar.getSecond(), file, new Pair<Integer, Integer>(0, 0), similar.getFirst().toSrcString().toString());
+                                                dumpPatch(logFile, "Original source code", file, range, currentBlockString);
+                                                dumpPatch(logFile, "Find a patch", file, range, oneBuggyBlock.toSrcString().toString());
+                                                String target = Constant.HOME + "/patch/" + _subject.getName() + "/" + _subject.getId() + "/" + currentTry;
+
+                                                File tarFile = new File(target);
+                                                if (!tarFile.exists()) {
+                                                    tarFile.mkdirs();
+                                                }
+
+                                                System.out.println("Successful patch found: " + testLogFile);
+
+                                                File sourceFile = new File(file);
+                                                FileUtils.copyFile(sourceFile, new File(target + "/" + totalAttempts + "_" + sourceFile.getName()));
+                                                status = Status.SUCCESS;
+                                                if (correct == Constant.PATCH_NUM) {
+                                                    return Status.SUCCESS;
+                                                }
+
+                                                break; //remove passed revision
+                                            case TEST_FAILED:
+
+                                                // writeOriginalTestCaseStatus(testLogFile);
+                                                System.out.println("Test suite failed: " + testLogFile);
+                                                if (legalModifications != null) {
+                                                    for (Integer index : modifySet) {
+                                                        legalModifications.add(modifications.get(index));
+                                                    }
+                                                }
+                                        }
+                                        for (Integer index : modifySet) {
+                                            modifications.get(index).restore();
                                         }
                                     }
-                            }
-                            for (Integer index : modifySet) {
-                                modifications.get(index).restore();
+                                    if (legalModifications == null) {
+                                        break;
+                                    }
+                                    list = combineModification(legalModifications);
+                                    modifications = legalModifications;
+                                    legalModifications = null;
+                                }
                             }
                         }
-                        if (legalModifications == null) {
-                            break;
-                        }
-                        list = combineModification(legalModifications);
-                        modifications = legalModifications;
-                        legalModifications = null;
+                    } else {
+                        System.out.println(String.format("Skipping over correct file: %s", fileClass));
                     }
                 }
             }

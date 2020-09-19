@@ -6,9 +6,11 @@
  */
 package cofix.core.parser.search;
 
+import cofix.common.config.Constant;
+import cofix.common.util.JavaFile;
+import cofix.core.parser.node.CodeBlock;
 import java.util.ArrayList;
 import java.util.List;
-
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Block;
@@ -22,10 +24,6 @@ import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.SwitchCase;
 import org.eclipse.jdt.core.dom.SwitchStatement;
 import org.eclipse.jdt.core.dom.WhileStatement;
-
-import cofix.common.config.Constant;
-import cofix.common.util.JavaFile;
-import cofix.core.parser.node.CodeBlock;
 
 /**
  * @author Jiajun

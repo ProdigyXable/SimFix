@@ -7,6 +7,9 @@
 
 package cofix.common.config;
 
+import java.util.LinkedList;
+import java.util.List;
+
 /**
  * This class contains all constant variables
  * @author Jiajun
@@ -52,5 +55,5 @@ public class Constant {
 	public static String COMMAND_TIMEOUT = "/usr/bin/timeout ";
 	public static String COMMAND_D4J = null;
 	
-
+        public static List<String> buggyMethods = new LinkedList();
 }

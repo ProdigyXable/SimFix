@@ -18,7 +18,9 @@ import cofix.core.parser.ProjectInfo;
 import cofix.test.purification.CommentTestCase;
 import cofix.test.purification.Purification;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -145,7 +147,7 @@ public class Main {
         subject.restore(subject.getHome() + subject.getTsrc());
     }
 
-    private static Pair<String, Set<Integer>> parseCommandLine(String[] args, Map<String, Pair<Integer, Set<Integer>>> projInfo) {
+    private static Pair<String, Set<Integer>> parseCommandLine(String[] args, Map<String, Pair<Integer, Set<Integer>>> projInfo) throws FileNotFoundException, IOException {
         Pair<String, Set<Integer>> options = new Pair<String, Set<Integer>>();
         if (args.length < 3) {
             return options;
@@ -164,8 +166,18 @@ public class Main {
             } else if (args[i].startsWith("--profl_fail=")) {
                 Constant.PROFL_FAIL = args[i].substring("--profl_fail=".length());
                 System.out.println(String.format("profl_fail = %s", Constant.PROFL_FAIL));
-            }
-            else if (args[i].startsWith("--proj_name=")) {
+            } else if (args[i].startsWith("--buggyFile=")) {
+                String file = args[i].substring("--buggyFile=".length());
+                System.out.println("Reading: " + file);
+                File f = new File(file);
+
+                for (String s : Files.readAllLines(f.toPath())) {
+                    Constant.buggyMethods.add(s.substring("^^^^^^".length()));
+                }
+
+                System.out.println(String.format("Buggy methods = %s", Constant.buggyMethods.toString()));
+
+            } else if (args[i].startsWith("--proj_name=")) {
                 projName = args[i].substring("--proj_name=".length());
             } else if (args[i].startsWith("--bug_id=")) {
                 String idseq = args[i].substring("--bug_id=".length());
